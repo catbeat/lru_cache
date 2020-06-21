@@ -4,91 +4,149 @@
 
 class LruCache: public MemObject
 {
-    class CPUSidePort: public SlavePort
-    {
-        private:
-            LruCache *owner;
+    private:
+        class CPUSidePort: public SlavePort
+        {
+            private:
+                LruCache *owner;
 
-        public:
-            /**
-             * Construct
-            */
-            CPUSidePort(const std::string &name, LruCache* Owner)
-              :SlavePort(name, Owner), owner(Owner)
-            {
-              ;
-            }
+                /* needRetry flag when a request received when a previous request is still outstanding
+                * once the previous request is over, we should retry for the request
+                */ 
+                bool needRetry;
 
-            /**
-             * @brief get the range of accessed address
-            */
-            AddrRangeList getAddrRanges() const override;
+                /**
+                 * to store blocked Packet when memport failed to send Timing request so that we can send again when receiving request retry
+                 */
+                PacketPtr blockedPacket;
 
-        protected:
+            public:
+                /**
+                 * Construct
+                */
+                CPUSidePort(const std::string &name, LruCache* Owner)
+                  :SlavePort(name, Owner), owner(Owner)
+                {
+                  ;
+                }
 
-            /**
-             * @param pkt the packet sent from atomic cpu mode
-            */
-            Tick recvAtomic(PacketPtr pkt) override
-            {
-              ;
-            }
+                /**
+                 * @brief get the range of accessed address
+                */
+                AddrRangeList getAddrRanges() const override;
 
-            /**
-             * @param pkt the packet sent from functional cpu mode
-            */
-            void recvFunctional(PacketPtr pkt) override;
+            protected:
 
-            /**
-             * @param pkt the packet sent from timing cpu mode
-            */
-            void recvTimingReq(PacketPtr pkt) override;
+                /**
+                 * @param pkt the packet sent from atomic cpu mode
+                */
+                Tick recvAtomic(PacketPtr pkt) override
+                {
+                  ;
+                }
 
-            /**
-             * @brief to receive a ask for another response
-            */
-            void recvRespRetry() override;
+                /**
+                 * @param pkt the packet sent from functional cpu mode
+                */
+                void recvFunctional(PacketPtr pkt) override;
 
-    }    
+                /**
+                 * @param pkt the packet sent from timing cpu mode
+                */
+                bool recvTimingReq(PacketPtr pkt) override;
 
-    class MemSidePort: public MasterPort
-    {
-        private:
-            LruCache *owner;
+                /**
+                 * @brief to receive a ask for another response
+                */
+                void recvRespRetry() override;
 
-        public:
+                /**
+                 * @brief send the packet as response to CPU
+                 * @param pkt the packet ptr to send
+                 */
+                void sendPacket(PacketPtr pkt);
+
+                /**
+                 * @brief reask for request when previously we blocked request
+                 */ 
+                void trySendRetry();
+
+        };    
+
+        class MemSidePort: public MasterPort
+        {
+            private:
+                LruCache *owner;
+
+                /**
+                 * to store blocked Packet when memport failed to send Timing request so that we can send again when receiving request retry
+                 */
+                PacketPtr blockedPacket;
+
+            public:
+                
+                /**
+                 * Construct
+                */
+                MemSidePort(const std::string &name, LruCache *Owner)
+                  :MasterPort(name, Owner), owner(Owner)
+                {
+                  ;
+                }
+
+                /**
+                 * @param pkt packet to send
+                */
+                void sendPacket(PacketPtr pkt);
+
+            protected:
             
-            /**
-             * Construct
-            */
-            MemSidePort(const std::string &name, LruCache *Owner)
-              :MasterPort(name, Owner), owner(Owner)
-            {
-              ;
-            }
+                /**
+                 * @param pkt packet received from Timing CPU
+                */
+                bool recvTimingResp(PacketPtr pkt) override;
 
-            /**
-             * @param pkt packet to send
-            */
-            void sendPacket(PacketPtr pkt);
+                /**
+                 * @brief receive the signal from memory to send request again
+                */
+                void recvReqRetry() override;
 
-        protected:
-        
-            /**
-             * @param pkt packet received from Timing CPU
-            */
-            bool recvTimingResp(PacketPtr pkt) override;
+                /**
+                 * @brief receive the access range to change, always called for first init
+                */
+                void recvRangeChange() override;
+        };
 
-            /**
-             * @brief receive the signal from memory to send request again
-            */
-            void recvReqRetry() override;
+        MemSidePort memPort;
 
-            /**
-             * @brief receive the access range to change, always called for first init
-            */
-            void recvRangeChange() override;
-    }
+        CPUSidePort instrPort;
+        CPUSidePort dataPort;
+
+        /**
+         * blocked flag when memPort is sending packet and waiting for response, meanwhile we can't handle other request
+         */
+        bool blocked;
+
+        /**
+         * @param pkt the packet to handle when receive functional request from cpu
+         */
+        void handleFunctional(PacketPtr pkt);
+
+        /**
+         * @param pkt the packet of current request which we need to handle
+         * @return true if we can handle it now otherwise we have to wait for the response of a previous one
+         */
+        bool handleRequest(PacketPtr pkt);
+
+        /**
+         * @param 
+         */
+        bool handleResponse(PacketPtr pkt);
+
+        /**
+         * @brief tell cpu side the range of memory size
+         */
+        void sendRangeChange();
 
     public:
 
@@ -97,35 +155,18 @@ class LruCache: public MemObject
         */
         LruCache(LruCacheParams *p);
 
-        MemSidePort memPort;
-
-        CPUSidePort instrPort;
-        CPUSidePort dataPort;
-
         /**
          * @param name the name of Port
          * @param idx
          * @return the master port to ask for
         */
-        BaseMasterPort& getMasterPort(const std::string &name, PortID idx = InvalidPortID) override;
+        MasterPort& getMasterPort(const std::string &name, PortID idx = InvalidPortID) override;
 
         /**
          * @param name the name of Port
          * @param idx
          * @return the slave port to ask for
         */
-        BaseSlavePort& getSlavePort(constv std::string &name, PortID idx = InvalidPortID) override;
+        SlavePort& getSlavePort(const std::string &name, PortID idx = InvalidPortID) override;
 
-        /**
-         * @param pkt the packet to handle when receive functional request from cpu
-         */
-        void handleFunctional(PacketPtr pkt);
-
-        void handleRequest(PacketPtr pkt);
-
-        /**
-         * @brief tell cpu side the range of memory size
-         */
-        void sendRangeChange();
-
-}
+};
