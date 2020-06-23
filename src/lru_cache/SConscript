@@ -1,7 +1,0 @@
-Import('*')
-
-SimObject('LruCache.py')
-
-Source('lru_cache.cc')
-
-DebugFlag('LruCache')
