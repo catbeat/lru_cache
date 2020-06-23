@@ -3,7 +3,8 @@
         {
             "name": "Linux",
             "includePath": [
-                "${workspaceFolder}/**"
+                "${workspaceFolder}/../**",
+                "/home/catbeat/Desktop/ball_of_yarn/catbeat_c/cache system/gem5/src"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/clang"

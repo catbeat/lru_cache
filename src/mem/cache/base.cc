@@ -57,7 +57,6 @@
 #include "mem/cache/prefetch/base.hh"
 #include "mem/cache/queue_entry.hh"
 #include "mem/cache/tags/super_blk.hh"
-#include "mem/cache/tags/lru.hh"
 #include "params/BaseCache.hh"
 #include "params/WriteAllocator.hh"
 #include "sim/core.hh"
