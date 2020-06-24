@@ -52,6 +52,46 @@ bool LruCache::handleRequest(PacketPtr pkt, int port_id)
     return true;
 }
 
+bool LruCache::handleResponse(PacketPtr pkt)
+{
+    assert(blocked);
+    DPRINTF(LruCache, "Got response of addr %#x.\n", pkt->getAddr());
+
+    // since main memory hit, so must cache miss, we insert it to cache
+    insert(pkt);
+
+    missLatency.sample(curTick()- missTime);        // record miss latency
+
+    if (originalPkt != nullptr){
+        // after insert, we can treat the original packet in the case that it will hits
+        bool hit M5_VAR_USED = accessFunctional(originalPkt);
+        panic_if(!hit, "Should always hit after inserting");
+
+        originalPkt->makeResponse();
+        delete pkt;     // now packet is freed and we can reuse it
+
+        pkt = originalPkt;
+        originalPkt = nullptr;
+    }
+
+    sendResponse(pkt);
+
+    return true;
+}
+
+void LruCache::sendResponse(PacketPtr pkt)
+{
+    int id = waitingPortID;
+
+    blocked = false;
+    waitingPortID = -1;
+
+    cpuPorts[id].sendPacket(pkt);
+    for (auto &port: cpuPorts){
+        port.trySendRetry();
+    }
+}
+
 AddrRangeList LruCache::getAddrRanges() const
 {
     DPRINTF(LruCache, "Sending new range\n");
@@ -70,6 +110,44 @@ void LruCache::accessTiming(PacketPtr pkt)
         DDUMP(LruCache, pkt->getConstPtr(), pkt->getSize());
         pkt->makeResponse();                // make it to be a response
         sendResponse(pkt);
+    }
+    else{
+        misses++;       // just for collect data about cache misses
+        missTime = curTick();       // current tick
+
+        Addr addr = pkt->getAddr();
+        Addr blockAddr = pkt->getBlockAddr(blockSize);
+        unsigned int size = pkt->getSize();
+
+        if ((addr == blockAddr) && (size == blockSize)){
+            DPRINTF(LruCache, "Forwarding Packet.\n");
+            memPort.sendPacket(pkt);
+        }
+        else{
+
+            DPRINTF(LruCache, "Upgrading the packet into blocksize.\n");
+
+            panic_if(Addr - blockAddr + size > blockSize, "Never access memory span multiple block");
+
+            assert(pkt->needsResponse());
+            Memcmd cmd;
+            if (pkt->isWrite() || pkt->isRead()){
+                cmd = MemCmd::ReadReq;
+            }
+            else{
+                panic("Unknown type of packet");
+            }
+
+            PacketPtr newPkt = new Packet(pkt->req, cmd, blockSize);
+            newPkt->allocate();
+
+            assert(newPkt->getAddr() == newPkt->getBlockAddr(blockSize));
+
+            originalPkt = pkt;
+
+            DPRINTF(LruCache, "Forwarding packet.\n");
+            memPort.sendPacket(newPkt);
+        }
     }
 }
 
@@ -108,7 +186,46 @@ bool LruCache::CPUSidePort::recvTimingReq(PacketPtr pkt)
         DPRINTF(LruCache, "Request fail");
         needRetry = true;
         return false;
+    }
+}
 
+void LruCache::CPUSidePort::sendPacket(PacketPtr pkt)
+{
+    panic_if(blockedPkt != nullptr, "Never try to send when the port is blocked");
+
+    // if failed to send response correctly, first stored to wait for chance
+    if (!sendTimingResp(pkt)){
+        DPRINTF(LruCache, "Repsonse Failed.\n");
+        blockedPkt = pkt;
+    }
+}
+
+void LruCache::CPUSidePort::trySendRetry()
+{
+    // if need retry and the previous response was successfully sent out
+    if (needRetry && blockedPkt == nullptr){
+        needRetry = false;
+        DPRINTF(LruCache, "Port%d, send retry req.\n", id);
+        sendRetryReq();
+    }
+}
+
+AddrRangeList LruCache::CPUSidePort::getAddrRanges() const
+{
+    return owner->getAddrRanges();
+}
+
+/* -----------------------------------------------------------
+    LruCache::MemSidePort
+--------------------------------------------------------------*/
+
+void LruCache::MemSidePort::sendPacket(PacketPtr pkt)
+{
+    panic_if(blockedPkt != nullptr, "Never try to send when blocked.\n");
+
+    if (!sendTimingReq(pkt)){
+        DPRINTF(LruCache, "Mem req failed.\n");
+        blockedPkt = pkt;
     }
 }
 

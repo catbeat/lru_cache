@@ -22,7 +22,7 @@ class LruCache: public ClockedObject
                 // if we are waiting for the response of previous request, we need to retry the current request after receiving response
                 bool needRetry;
 
-                // if try to send a packet but blocked, just stored it here
+                // if try to send a packet as response but blocked, just stored it here
                 PacketPtr blockedPkt;
 
             public:
@@ -128,6 +128,20 @@ class LruCache: public ClockedObject
          * @return true if we can handle it right now
          */
         bool handleRequest(PacketPtr pkt, int port_id);
+
+        /**
+         * @param pkt the packet as response
+         * @return true if we can respond right now
+         */
+        bool handleResponse(PacketPtr pkt);
+
+        /**
+         * @brief put the request data from main memory to cache
+         * @param pkt packet to insert into cache
+         */
+        void insert(PacketPtr pkt);
+
+        void sendResponse(PacketPtr pkt);
     
         AddrRangeList getAddrRanges() const;
 
@@ -170,6 +184,9 @@ class LruCache: public ClockedObject
 
         // the cache map
         std::unordered_map<Addr, uint8_t*> cacheStore;
+
+        // recorder for calculating miss latency
+        Tick missTime;
 
         Stats::Scalar hits;
         Stats::Scalar misses;
