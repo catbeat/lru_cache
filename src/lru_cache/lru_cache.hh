@@ -3,6 +3,8 @@
 
 #include <vector>
 #include <unordered_map>
+
+#include <base/statistics.hh>
 #include <mem/port.hh>
 #include <params/LruCache.hh>
 #include <sim/clocked_object.hh>
@@ -141,6 +143,10 @@ class LruCache: public ClockedObject
          */
         void insert(PacketPtr pkt);
 
+        /**
+         * @brief send the response to cpu
+         * @param pkt the packet to send to cpu
+         */
         void sendResponse(PacketPtr pkt);
     
         AddrRangeList getAddrRanges() const;
