@@ -31,7 +31,7 @@ class LruCache: public ClockedObject
                 /**
                  * constructor
                  */
-                CPUSidePort(const std::string &name, int Id, LruCache *Owner)
+                CPUSidePort(const std::string &name, int Id, LruCache *Owner):
                     SlavePort(name, Owner), \
                     id(Id), \
                     owner(Owner), \
@@ -39,7 +39,7 @@ class LruCache: public ClockedObject
                     blockedPkt(nullptr)
                 {
                     ;
-                }
+                };
 
                 /**
                  * @param pkt the packet to send
@@ -52,7 +52,7 @@ class LruCache: public ClockedObject
                 AddrRangeList getAddrRanges() const override;
 
                 /**
-                 * @brief if need retry, give request once again
+                 * @brief tell cpu it can give request again since all the previous procedure should be appropriately solved
                  */
                 void trySendRetry();
 
@@ -61,7 +61,8 @@ class LruCache: public ClockedObject
                  * @brief receive request from cpu in atomic mode
                  * @param pkt the pkt of request
                  */
-                void recvAtomic(PacketPtr pkt) override;
+                Tick recvAtomic(PacketPtr pkt) override
+                {   panic("receive atomic unimpl");}
 
                 /**
                  * @brief receive request from cpu in functional mode
@@ -94,8 +95,8 @@ class LruCache: public ClockedObject
                 /**
                  * constructor
                  */
-                MemSidePort(const std::string &name, LruCache *Owner)
-                    SlavePort(name, owner), \
+                MemSidePort(const std::string &name, LruCache *Owner):
+                    MasterPort(name, owner), \
                     blockedPkt(nullptr), \
                     owner(Owner)
                 {
@@ -148,15 +149,23 @@ class LruCache: public ClockedObject
          * @param pkt the packet to send to cpu
          */
         void sendResponse(PacketPtr pkt);
+
+        /**
+         * @brief deal with functional request
+         * @param pkt the packet receive from the funtional request
+         */
+        void handleFunctional(PacketPtr pkt);
     
         AddrRangeList getAddrRanges() const;
+
+        void sendRangeChange() const;
 
         /**
          * @param pkt the packet of request
          */
-        void accessTiming(PacketPkt pkt);
+        void accessTiming(PacketPtr pkt);
 
-        void accessFunctional(PacketPtr pkt);
+        bool accessFunctional(PacketPtr pkt);
 
     public:
         LruCache(LruCacheParams *param);

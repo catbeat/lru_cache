@@ -7,22 +7,22 @@
     LruCache
 ------------------------------------------------------------*/
 
-LruCache::LruCache(LruCacheParams *params)
+LruCache::LruCache(LruCacheParams *params):
     ClockedObject(params), \
     latency(params->latency), \
     blockSize(params->system->cacheLineSize()), \
     capacity(params->size / blockSize), \
     memPort(params->name + ".mem_side", this), \
     blocked(false), \
-    outstandingPacket(nullptr), \
-    waitingPortID(-1)
+    originalPkt(nullptr), \
+    waitingPortId(-1)
 {
     for (int i = 0; i < params->port_cpu_side_connection_count; ++i){
         cpuPorts.emplace_back(name() + csprintf(".cpu_side[%d]", i), i, this);
     }
 }
 
-Port &LruCache::getPort(const std::string& if_name, PortID idx = InvalidPortID)
+Port &LruCache::getPort(const std::string& if_name, PortID idx)
 {
     if (if_name == "mem_side"){
         panic_if(idx != InvalidPortID, "Mem side of cache is not vector port");
@@ -36,6 +36,20 @@ Port &LruCache::getPort(const std::string& if_name, PortID idx = InvalidPortID)
     }
 }
 
+AddrRangeList LruCache::getAddrRanges() const
+{
+    DPRINTF(LruCache, "Got New Addr range and sending.\n");
+
+    return memPort.getAddrRanges();
+}
+
+void LruCache::sendRangeChange() const
+{
+    for (auto &port: cpuPorts){
+        port.sendRangeChange();
+    }
+}
+
 bool LruCache::handleRequest(PacketPtr pkt, int port_id)
 {
     // if we already blocked request since we are waiting for response
@@ -44,7 +58,7 @@ bool LruCache::handleRequest(PacketPtr pkt, int port_id)
     }
 
     blocked = true;                 // now blocked request
-    waitingPortID = port_id;        // record the waiting port
+    waitingPortId = port_id;        // record the waiting port
 
     // after latency finish the event
     schedule(new EventFunctionWrapper([this, pkt]{ accessTiming(pkt); }, name() + ".accessEvent", true), clockEdge(latency));
@@ -79,23 +93,27 @@ bool LruCache::handleResponse(PacketPtr pkt)
     return true;
 }
 
+void LruCache::handleFunctional(PacketPtr pkt)
+{
+    if (accessFunctional(pkt)){
+        pkt->makeResponse();
+    }
+    else{
+        memPort.sendFunctional(pkt);
+    }
+}
+
 void LruCache::sendResponse(PacketPtr pkt)
 {
-    int id = waitingPortID;
+    int id = waitingPortId;
 
     blocked = false;
-    waitingPortID = -1;
+    waitingPortId = -1;
 
     cpuPorts[id].sendPacket(pkt);
     for (auto &port: cpuPorts){
         port.trySendRetry();
     }
-}
-
-AddrRangeList LruCache::getAddrRanges() const
-{
-    DPRINTF(LruCache, "Sending new range\n");
-    return memPort.getAddrRanges();
 }
 
 void LruCache::accessTiming(PacketPtr pkt)
@@ -107,7 +125,7 @@ void LruCache::accessTiming(PacketPtr pkt)
     if (hit){
         hits++;         // just for collect data about cache hits
 
-        DDUMP(LruCache, pkt->getConstPtr(), pkt->getSize());
+        DDUMP(LruCache, pkt->getConstPtr<uint8_t>(), pkt->getSize());
         pkt->makeResponse();                // make it to be a response
         sendResponse(pkt);
     }
@@ -127,10 +145,10 @@ void LruCache::accessTiming(PacketPtr pkt)
 
             DPRINTF(LruCache, "Upgrading the packet into blocksize.\n");
 
-            panic_if(Addr - blockAddr + size > blockSize, "Never access memory span multiple block");
+            panic_if(addr - blockAddr + size > blockSize, "Never access memory span multiple block");
 
             assert(pkt->needsResponse());
-            Memcmd cmd;
+            MemCmd cmd;
             if (pkt->isWrite() || pkt->isRead()){
                 cmd = MemCmd::ReadReq;
             }
@@ -151,7 +169,7 @@ void LruCache::accessTiming(PacketPtr pkt)
     }
 }
 
-void LruCache::accessFunctional(PacketPtr pkt)
+bool LruCache::accessFunctional(PacketPtr pkt)
 {
     Addr block_addr = pkt->getBlockAddr(blockSize);
 
@@ -161,7 +179,7 @@ void LruCache::accessFunctional(PacketPtr pkt)
             pkt->writeDataToBlock(iter->second, blockSize);
         }
         else if (pkt->isRead()){
-            pkt->readDataFromBlock(iter->second, blockSize);
+            pkt->setDataFromBlock(iter->second, blockSize);
         }
         else{
             panic("unknown packet type");
@@ -173,6 +191,48 @@ void LruCache::accessFunctional(PacketPtr pkt)
     return false;
 }
 
+void LruCache::insert(PacketPtr pkt)
+{
+    assert(pkt->isResponse());          // the packet must be a response
+    assert(pkt->getAddr() == pkt->getBlockAddr(blockSize));   // the packet must be aligned in block size
+    assert(cacheStore.find(pkt->getAddr()) == cacheStore.end());       // it must not be in cache
+
+    // replace algorithm
+    
+    /* random replace */
+    if (cacheStore.size() >= capacity){
+        int bucket, bucket_size;
+
+        do{
+            bucket = random_mt.random(0, (int) cacheStore.bucket_count()-1);
+        } while ( (bucket_size = cacheStore.bucket_size(bucket)) == 0);
+
+        // from that bucket randomly pick one
+        auto block = std::next(cacheStore.begin(bucket), random_mt.random(0, bucket_size-1));
+
+        DPRINTF(LruCache, "Removing addr %#x.\n", block->first);
+
+        // now we already pick one to replace, we need to send it back to main memory
+        RequestPtr req = std::make_shared<Request>(block->first, blockSize, 0, 0);
+
+        // as we already configure the request, we pack the information to send
+        PacketPtr new_pkt = new Packet(req, MemCmd::WritebackDirty, blockSize);
+        new_pkt->dataDynamic(block->second);
+
+        memPort.sendPacket(new_pkt);
+
+        cacheStore.erase(block->first);
+    }
+
+    DPRINTF(LruCache, "Inserting %s.\n", pkt->print());
+    DDUMP(LruCache, pkt->getConstPtr<uint8_t>(), blockSize);
+
+    uint8_t *data = new uint8_t[blockSize];
+
+    cacheStore[pkt->getAddr()] = data;
+    pkt->writeDataToBlock(data, blockSize);
+}
+
 /* -----------------------------------------------------------
     LruCache::CPUSidePort
 ------------------------------------------------------------*/
@@ -181,17 +241,28 @@ bool LruCache::CPUSidePort::recvTimingReq(PacketPtr pkt)
 {
     DPRINTF(LruCache, "Got request %s\n", pkt->print());
 
+    // when previously sending response failed, we have to wait for it to be send correctly
+    if (blockedPkt || needRetry){
+        DPRINTF(LruCache, "Request blocked");
+        needRetry = true;
+        return false;
+    }
+
     // we can not handle the request right now
-    if (!owner->handleRequest){
+    if (!owner->handleRequest(pkt, id)){
         DPRINTF(LruCache, "Request fail");
         needRetry = true;
         return false;
     }
+
+    return true;
 }
 
 void LruCache::CPUSidePort::sendPacket(PacketPtr pkt)
 {
     panic_if(blockedPkt != nullptr, "Never try to send when the port is blocked");
+
+    DPRINTF(LruCache, "Send %s to CPU.\n", pkt->print());
 
     // if failed to send response correctly, first stored to wait for chance
     if (!sendTimingResp(pkt)){
@@ -215,6 +286,27 @@ AddrRangeList LruCache::CPUSidePort::getAddrRanges() const
     return owner->getAddrRanges();
 }
 
+void LruCache::CPUSidePort::recvFunctional(PacketPtr pkt)
+{
+    return owner->handleFunctional(pkt);
+}
+
+void LruCache::CPUSidePort::recvRespRetry()
+{
+    // as he asked for retry, we must have blocked packet
+    assert(blockedPkt != nullptr);
+
+    // clear the blocked packet
+    PacketPtr pkt = blockedPkt;
+    blockedPkt = nullptr;
+
+    // now send it once again
+    DPRINTF(LruCache, "Retrying response pkt $s.\n", pkt->print());
+    sendPacket(pkt);
+
+    trySendRetry();
+}
+
 /* -----------------------------------------------------------
     LruCache::MemSidePort
 --------------------------------------------------------------*/
@@ -227,6 +319,27 @@ void LruCache::MemSidePort::sendPacket(PacketPtr pkt)
         DPRINTF(LruCache, "Mem req failed.\n");
         blockedPkt = pkt;
     }
+}
+
+void LruCache::MemSidePort::recvRangeChange()
+{
+    owner->sendRangeChange();
+}
+
+bool LruCache::MemSidePort::recvTimingResp(PacketPtr pkt)
+{
+    return owner->handleResponse(pkt);
+}
+
+void LruCache::MemSidePort::recvReqRetry()
+{
+    assert(blockedPkt != nullptr);   // it should be blocked
+
+    // send the blocked Packet again
+    PacketPtr pkt = blockedPkt;
+    blockedPkt = nullptr;
+
+    sendPacket(pkt);
 }
 
 
