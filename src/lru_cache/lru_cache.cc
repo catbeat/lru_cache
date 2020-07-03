@@ -169,12 +169,31 @@ void LruCache::accessTiming(PacketPtr pkt)
     }
 }
 
+void LruCache::moveToHead(Addr blockAddr)
+{
+    auto iter = replaceSeq.begin();
+    auto end = replaceSeq.end();
+
+    for (; iter != end; ++iter){
+        if ((*iter) == blockAddr){
+            replaceSeq.erase(iter);
+            replaceSeq.push_front(blockAddr);
+            return;
+        }
+    }
+
+    panic("No blockAddr at here");
+}
+
 bool LruCache::accessFunctional(PacketPtr pkt)
 {
     Addr block_addr = pkt->getBlockAddr(blockSize);
 
     auto iter = cacheStore.find(block_addr);
+
+    /* random replace */
     if (iter != cacheStore.end()){
+
         if (pkt->isWrite()){
             pkt->writeDataToBlock(iter->second, blockSize);
         }
@@ -188,6 +207,25 @@ bool LruCache::accessFunctional(PacketPtr pkt)
         return true;
     }
 
+    /* full assoc lru cache */
+    /*
+    if (iter != cacheStore.end()){
+        moveToHead(block_addr);
+
+        if (pkt->isWrite()){
+            pkt->writeDataToBlock(iter->second, blockSize);
+        }
+        else if (pkt->isRead()){
+            pkt->setDataFromBlock(iter->second, blockSize);
+        }
+        else{
+            panic("unknown packet type");
+        }
+
+        return true;
+    }
+    */
+
     return false;
 }
 
@@ -198,9 +236,11 @@ void LruCache::insert(PacketPtr pkt)
     assert(cacheStore.find(pkt->getAddr()) == cacheStore.end());       // it must not be in cache
 
     // replace algorithm
-    
+
     /* random replace */
+
     if (cacheStore.size() >= capacity){
+        
         int bucket, bucket_size;
 
         do{
@@ -222,6 +262,7 @@ void LruCache::insert(PacketPtr pkt)
         memPort.sendPacket(new_pkt);
 
         cacheStore.erase(block->first);
+        
     }
 
     DPRINTF(LruCache, "Inserting %s.\n", pkt->print());
@@ -231,6 +272,34 @@ void LruCache::insert(PacketPtr pkt)
 
     cacheStore[pkt->getAddr()] = data;
     pkt->writeDataToBlock(data, blockSize);
+
+    /* fully associative Lru Cache */
+/*
+    if (cacheStore.size() >= capacity){
+        auto addr = replaceSeq.back();
+        replaceSeq.pop_back();
+
+        DPRINTF(LruCache, "Removing addr %#x.\n", addr);
+
+        RequestPtr req = std::make_shared<Request>(addr, blockSize, 0, 0);
+
+        PacketPtr new_pkt = new Packet(req, MemCmd::WritebackDirty, blockSize);
+        new_pkt->dataDynamic(cacheStore[addr]);
+
+        memPort.sendPacket(new_pkt);
+        cacheStore.erase(addr);
+    }
+
+    DPRINTF(LruCache, "Inserting %s.\n", pkt->print());
+    DDUMP(LruCache, pkt->getConstPtr<uint8_t>(), blockSize);
+
+    uint8_t *data = new uint8_t[blockSize];
+
+    cacheStore[pkt->getAddr()] = data;
+    pkt->writeDataToBlock(data, blockSize);
+
+    replaceSeq.push_front(pkt->getAddr());
+*/
 }
 
 void LruCache::regStats()

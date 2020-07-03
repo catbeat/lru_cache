@@ -2,6 +2,7 @@
 #define LRU_CACHE_HH
 
 #include <vector>
+#include <deque>
 #include <unordered_map>
 
 #include "base/statistics.hh"
@@ -202,6 +203,9 @@ class LruCache: public ClockedObject
         // the cache map
         std::unordered_map<Addr, uint8_t*> cacheStore;
 
+        // the sequence of visiting
+        std::deque<Addr> replaceSeq;
+
         // recorder for calculating miss latency
         Tick missTime;
 
@@ -209,6 +213,9 @@ class LruCache: public ClockedObject
         Stats::Scalar misses;
         Stats::Histogram missLatency;
         Stats::Formula hitRatio;
+
+    private:
+        void moveToHead(Addr blockAddr);
 
 };
 #endif
