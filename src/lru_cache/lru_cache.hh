@@ -4,10 +4,10 @@
 #include <vector>
 #include <unordered_map>
 
-#include <base/statistics.hh>
-#include <mem/port.hh>
-#include <params/LruCache.hh>
-#include <sim/clocked_object.hh>
+#include "base/statistics.hh"
+#include "mem/port.hh"
+#include "params/LruCache.hh"
+#include "sim/clocked_object.hh"
 
 class LruCache: public ClockedObject
 {
@@ -39,7 +39,7 @@ class LruCache: public ClockedObject
                     blockedPkt(nullptr)
                 {
                     ;
-                };
+                }
 
                 /**
                  * @param pkt the packet to send
@@ -96,7 +96,7 @@ class LruCache: public ClockedObject
                  * constructor
                  */
                 MemSidePort(const std::string &name, LruCache *Owner):
-                    MasterPort(name, owner), \
+                    MasterPort(name, Owner), \
                     blockedPkt(nullptr), \
                     owner(Owner)
                 {
@@ -170,7 +170,9 @@ class LruCache: public ClockedObject
     public:
         LruCache(LruCacheParams *param);
 
-        Port &getPort(const std::string &if_name, PortID idx = InvalidPortID);
+        Port &getPort(const std::string &if_name, PortID idx = InvalidPortID) override;
+
+        void regStats() override;
 
     private:
         // latency for both hit and miss

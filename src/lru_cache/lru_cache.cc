@@ -1,4 +1,4 @@
-#include "lru_cache.hh"
+#include "lru_cache/lru_cache.hh"
 #include "debug/LruCache.hh"
 #include "sim/system.hh"
 #include "base/random.hh"
@@ -233,6 +233,21 @@ void LruCache::insert(PacketPtr pkt)
     pkt->writeDataToBlock(data, blockSize);
 }
 
+void LruCache::regStats()
+{
+    ClockedObject::regStats();
+
+    hits.name(name() + ".hits").desc("Number of hits");
+
+    misses.name(name() + ".misses").desc("Number of misses");
+
+    missLatency.name(name() + ".missLatency").desc("Ticks for misses to the cache").init(16);
+
+    hitRatio.name(name() + ".hitRatio").desc("The ratio of hit in access");
+
+    hitRatio = hits/(hits+misses);
+}
+
 /* -----------------------------------------------------------
     LruCache::CPUSidePort
 ------------------------------------------------------------*/
@@ -243,18 +258,19 @@ bool LruCache::CPUSidePort::recvTimingReq(PacketPtr pkt)
 
     // when previously sending response failed, we have to wait for it to be send correctly
     if (blockedPkt || needRetry){
-        DPRINTF(LruCache, "Request blocked");
+        DPRINTF(LruCache, "Request blocked\n");
         needRetry = true;
         return false;
     }
 
     // we can not handle the request right now
     if (!owner->handleRequest(pkt, id)){
-        DPRINTF(LruCache, "Request fail");
+        DPRINTF(LruCache, "Request fail\n");
         needRetry = true;
         return false;
     }
 
+    DPRINTF(LruCache, "Request successed!\n");
     return true;
 }
 
