@@ -1,0 +1,43 @@
+/*  The state machine specifically for L1Cache, the following is the description
+    which indicates that it uses MSI protocol */
+machine(MachineType:L1Cache, "MSI Cache")
+:Sequencer *sequencer;      // a piece of memory with slave port to receive message from others
+ CacheMemory *cacheMemory;  // the cache memory stores the data and states
+ bool send_evictions;       // used for out-of-order core when we need to evict an address so that we can operate on the load-store queue
+
+ /* all the message data line are defined below */
+
+ // the message buffer used for sending request to directory, the priority is 0(low)
+ MessageBuffer *requestToDir, network="To", virtual_network="0", vnet_type="request";
+
+ // the message buffer used for sending response to directory or other core's cache, the priority is 2(highest)
+ MessageBuffer *responseToDirOrSibling, network="To", virtual_network="2", vnet_type="response";
+
+ // the message buffer used for receive forward operation from directory, its priority should be 1 as it's usually activated by a previous request to directory
+ MessageBuffer *forwardFromDir, network="from", virtual_network="1", vnet_type="forward";
+
+ // the message buffer used for response sent from directory or other L1 cache, its priority is 2, too
+ MessageBuffer *responseFromDirOrSibling, network="from", virtual_network="2", vnet_type="response";
+
+ // repulsory member which gem5 transfer packet into ruby packet, used by sequencer
+ MessageBuffer *mandatoryQueue;
+{
+
+    /* ------------------------------------------------------
+        following part is the definition of cache entry states
+        some of them is static states like I, M, some are midd-
+        le/transforming states, followed by AccessPermission, 
+        which indicates as its name.
+    ---------------------------------------------------------*/
+    state_declaration(State, desc="Cache entry states"){
+
+        /* Invalid state */
+
+        I,  AccessPermission:Invalid, desc="Not present/Invalid";
+
+        IS_D, AccessPermission:Invalid, desc="from invalid to share, waiting for data";
+        IM_AD, AccessPermission:Invalid, desc="from invalid to modify, waiting for acks and data, when that was M in another core's cache";
+        IM_D, AccessPermission:Invalid, desc="from invalid to modify, waiting  for data as no other core has that data";
+
+    }
+}
