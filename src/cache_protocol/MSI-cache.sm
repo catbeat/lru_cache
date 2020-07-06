@@ -37,7 +37,44 @@ machine(MachineType:L1Cache, "MSI Cache")
 
         IS_D, AccessPermission:Invalid, desc="from invalid to share, waiting for data";
         IM_AD, AccessPermission:Invalid, desc="from invalid to modify, waiting for acks and data, when that was M in another core's cache";
-        IM_D, AccessPermission:Invalid, desc="from invalid to modify, waiting  for data as no other core has that data";
+        IM_A, AccessPermission:Busy, desc="from invalid to modify, waiting  for acks";
 
+        S, AccessPermission:Read_Only, desc="shared";
+
+        SM_AD, AccessPermission:Read_Only, desc="from shared to modify, waiting for acks and data";
+        SM_A, AccessPermission:Read_Only, desc="from shared to modify, waiting for acks";
+
+        M, AccessPermission:Read_Write, desc="modified";
+
+        MI_A, AccessPermission:Busy, desc="from modified to invalid, waiting for put ack";
+
+        SI_A, AccessPermission:Busy, desc="from shared to invalid, waiting for put ack";
+
+        II_A, AccessPermission:Invalid, desc="sent valid data before receiving put ack";
+    }
+
+    /*----------------------------------------------------------
+        Event definition
+    ----------------------------------------------------------*/
+
+    enumeration(Event, desc="Cache events"){
+        // from the processor or sequencer or mandatory queue
+        Load,           desc="Load from processor";
+        Store,          desc="Store from processor";
+
+        Replacement,    desc="Triggered when find victim"
+
+        FwdGetS,        desc="Directory send this to satisfy getS, it ask a cache to change M to S for response";
+        FwdGetM,        desc="Directory send this to satisfy getM, it ask a cache to change M to I for resposne";
+        Inv,            desc="Directory send this to invalidate a cache's shared tag";
+        PutAck,         desc="Directory respond when we issue put, it avoids deadlock";
+
+        DataDirNoAcks,  desc="Response of Data from Directory (ack = 0)";
+        DataDirAcks,    desc="Response of Data from Directory (ack > 0)";
+
+        DataOwner,      desc="Response of Data from Owner";
+        InvAck,         desc="Invalidation ack after receiving Inv";
+
+        LastInvAck,     desc="Triggered after the last ack is received"; 
     }
 }
