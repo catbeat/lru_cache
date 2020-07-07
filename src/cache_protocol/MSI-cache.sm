@@ -77,4 +77,22 @@ machine(MachineType:L1Cache, "MSI Cache")
 
         LastInvAck,     desc="Triggered after the last ack is received"; 
     }
+
+    structure(Entry, desc="Cache Entry", interface="AbstractCacheEntry"){
+        State CacheState,   desc="the state of entry";
+        DataBlock DataBlk,  desc="the block for data";
+    }
+
+    structure(TBE, desc="Transient buffer entry"){
+        State TBEState,     desc="the state of block";
+        DataBlock DataBlk,  desc="the block for data";
+        int AckOutstanding, default=0, desc="Number of acks left to receive";
+    }
+
+    structure(TBETable, external="yes"){
+        TBE lookup(Addr);
+        void allocate(Addr);
+        void deallocate(Addr);
+        bool isPresent(Addr);
+    }
 }
