@@ -95,4 +95,134 @@ machine(MachineType:L1Cache, "MSI Cache")
         void deallocate(Addr);
         bool isPresent(Addr);
     }
+
+    /* member function */
+
+    TBETable TBEs, template="<L1Cache_TBE>", constructor="m_number_of_TBEs";
+
+    Tick clockEdge();
+
+    void set_cache_entry(AbstractCacheEntry a);
+    void unset_cache_entry();
+    void set_tbe(TBE b);
+    void unset_tbe();
+
+    MachineID mapAddressToMachine(Addr addr, MachineType mtype);
+
+    Entry getCacheEntry(Addr address), return_by_pointer="yes" {
+        return static_cast(Entry, "pointer", cacheMemory.lookup(address));
+    }
+
+    State getState(TBE tbe, Entry cache_entry, Addr addr){
+        if (is_valid(tbe)){
+            return tbe.TBEState;
+        }
+        else if (is_valid(cache_entry)){
+            return cache_entry.CacheState;
+        }
+        else{
+            return State:I;
+        }
+    }
+
+    void setState(TBE tbe, Entry cache_entry, Addr addr, State state){
+        if (is_valid(tbe)){
+            tbe.TBEState := state;
+        }
+
+        if (is_valid(cache_entry)){
+            cache_entry.CacheState := state;
+        }
+    }
+
+    AccessPermission getAccessPermission(Addr addr){
+        TBE tbe := TBEs[addr];
+
+        // if the content is already in TBE( it's undergo changing), so the permission decide by the state of TBE entry
+        if (is_valid(tbe)){
+            return L1Cache_State_to_permission(tbe.TBEState);
+        }
+
+        Entry cache_entry := getCacheEntry(addr);
+
+        // find it in cache and we get
+        if (is_valid(cache_entry)){
+            return L1Cache_State_to_permission(cache_entry.CacheState);
+        }
+
+        // Still in main memory
+        return AccessPermission:NotPresent;
+    }
+
+    void setAccessPermission(Entry cache_entry, Addr addr, State, state){
+        if (is_valid(cache_entry)){
+            cache_entry.changePermission(L1Cache_State_to_permission(state));
+        }
+    }
+
+    void functionalRead(Addr addr, Packet *pkt){
+        TBE tbe := TBEs[addr];
+
+        // see if it's undergoing changing
+        if (is_valid(tbe)){
+            testAndRead(addr, tbe.DataBlk, pkt);
+        }
+        else{
+            testAndRead(addr, getCacheEntry(addr).DataBlk, pkt);
+        }
+    }
+
+    int functionalWrite(Addr addr, Packet *pkt){
+        TBE tbe := TBEs[addr];
+
+        // see if it's undergoing changing
+        if (is_valid(tbe)){
+            if (testAndWrite(addr, tbe.DataBlk, pkt)){
+                return 1;
+            }
+            else{
+                return 0;
+            }
+        }
+        else{
+            if (testAndWrite(addr, getCacheEntry(addr).DataBlk, pkt)){
+                return 1;
+            }
+            else{
+                return 0;
+            }
+        }
+    }
+
+    /* Input/Output network */
+
+    /*  Here first define the output port, which is the message buffer
+        defined previously, I just rename the request to directory as 
+        request out, and similarly for response;
+
+        The msg will be defined in MSI-cache-msg.sm.
+    */
+    out_port(request_out, RequestMsg, requestToDir);
+    out_port(response_out, ResponseMsg, responseToDirOrSibling);
+
+
+    /*  Here following is the input port, which listed by the pirority for
+        each input port block
+    */
+
+    in_port(response_in, ResponseMsg, responseFromDirOrSibling){
+        // first check whether there is msg
+        if (response_in.isReady(clockEdge())){
+
+            // I fetch the msg
+            peek(response_in, ResponseMsg){
+                Entry cache_entry := getCacheEntry(in_msg.addr);
+                TBE tbe := TBEs[in_msg.addr];
+
+                assert(is_valid(tbe));          // as received response, then previously the entry must be passed to TBEs
+
+                
+            }
+        }
+    }
 }
