@@ -1,0 +1,14 @@
+enumeration(CoherenceResponseType, desc="The type of response"){
+    Data,       desc="response of most up-of-date data";
+    InvAck,     desc="Invalidation ack, the sibling have invalidated the shared block"
+}
+
+structure(ResponseMsg, desc="Response Message from directory or sibling cache after forward request", interface="Message"){
+    Addr addr,                          desc="The addr of this response targetted";
+    CoherenceResponseType Type,         desc = "The type of the response type such as 'Inv-Ack'";
+    MachineID Sender,                   desc="The numebr of node sending this response";
+    NetDest Destination,                desc="multicast destination";
+    DataBlk data,                       desc="The return data";
+    MessageSizeType MessageSize,        desc="The size category of Message";
+    int Acks,                           desc="The information of acks";
+}
