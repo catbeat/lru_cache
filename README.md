@@ -1,7 +1,8 @@
-<<<<<<< HEAD
-# Gem5-cacheSystem
-An simple implementation of self-constructed cache
-=======
-# lru_cache
-Trying to simulate a LRU cache in gem5
->>>>>>> 0768705b39b85a4b4b2d1a6de4af91a6e3f9c465
+<h1> Lru Cache </h1>
+
+This repo mianly contains my work on implementing a multi-core cache system with gem5 ruby memory.
+Meanwhile I try to implement different structure for this cache.
+Including associaty, replacing policy, coherency protocol, multi-level and distribution of cache
+memory.
+
+
