@@ -4,7 +4,12 @@ enumeration(CoherenceResponseType, desc="The type of response"){
 }
 
 enumeration(CoherenceRequestType, desc="The type of request"){
-    Get_
+    GetS,
+    GetM,
+    PutS,
+    PutM,
+    Inv,
+    PutAck,
 }
 
 Structure(RequestMsg, desc="Request Message sent from cache or dir", interface = "Message"){
