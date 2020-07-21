@@ -221,8 +221,47 @@ machine(MachineType:L1Cache, "MSI Cache")
 
                 assert(is_valid(tbe));          // as received response, then previously the entry must be passed to TBEs
 
-                
+                // firstly decide who is the sender of this response
+
+                // from directory
+                if (MachineIDToMachineType(in_msg.Sender) == MachineType::Directory){
+                    if (in_msg.Type != CoherenceResponseType::Data){
+                        error("Directory should only respond with Data type");
+                    }
+
+                    // the tbe AckOutstanding is the current acks we have received and the in_msg.acks is the acks directory ask us to wait for
+                    assert(in_msg.Acks + tbe.AckOutstanding >= 0);
+
+                    if (in_msg.Acks + tbe.AckOutstanding == 0){
+                        trigger(Event:DataDirNoAcks, in_msg.addr, cache_entry, tbe);
+                    }
+                    else{
+                        trigger(Event:DataDirAcks, in_msg.addr, cache_entry, tbe);
+                    }
+                }
+                else{
+                    if (in_msg.Type == CoherenceResponseType::Data){
+                        trigger(Event:DataOwner, in_msg.addr, cache_entry, tbe);
+                    }
+                    else if (in_msg.Type == CoherenceResponseType::InvAck){
+                        DPRINTF(RubySlicc, "Got inv ack. %d left\n", tbe.AckOutstanding);
+
+                        if (tbe.AckOutstanding == 1){
+                            trigger(Event::LastInvAck, in_msg.addr, cache_entry, tbe);
+                        }
+                        else{
+                            trigger(Event:InvAck, in_msg.addr, cache_entry, tbe);
+                        }
+                    }
+                    else{
+                        error("Unexpected response from other cache");
+                    }
+                }
             }
         }
+    }
+
+    in_port(forward_in, RequestMsg, forwardFromDir){
+        
     }
 }
