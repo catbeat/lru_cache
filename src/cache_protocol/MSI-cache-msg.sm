@@ -3,6 +3,15 @@ enumeration(CoherenceResponseType, desc="The type of response"){
     InvAck,     desc="Invalidation ack, the sibling have invalidated the shared block"
 }
 
+enumeration(CoherenceRequestType, desc="The type of request"){
+    Get_
+}
+
+Structure(RequestMsg, desc="Request Message sent from cache or dir", interface = "Message"){
+    Addr addr,
+    CoherenceRequestType Type,
+}
+
 structure(ResponseMsg, desc="Response Message from directory or sibling cache after forward request", interface="Message"){
     Addr addr,                          desc="The addr of this response targetted";
     CoherenceResponseType Type,         desc = "The type of the response type such as 'Inv-Ack'";
