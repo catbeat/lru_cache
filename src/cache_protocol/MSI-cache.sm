@@ -261,7 +261,68 @@ machine(MachineType:L1Cache, "MSI Cache")
         }
     }
 
+    // the port for getting forward request from directory
     in_port(forward_in, RequestMsg, forwardFromDir){
-        
+        if (forward_in.isReady(clockEdge())){
+
+            // I fetch the request msg
+            peek(forward_in, RequestMsg){
+                Entry cache_entry := getCacheEntry(in_msg.addr);
+                TBE tbe := TBEs[in_msg.addr];
+
+                // here is fwd-getS
+                if (in_msg.Type == CoherenceRequestType:GetS){
+                    trigger(Event:FwdGetS, in_msg.addr, cache_entry, tbe);
+                }
+                else if (in_msg.Type == CoherenceRequestType:GetM){
+                    trigger(Event:FwdGetM, in_msg.addr, cache_entry, tbe)
+                }
+                else if (in_msg.Type == CoherenceRequestType:Inv){
+                    trigger(Event:Inv, in_msg.addr, cache_entry, tbe);
+                }
+                else if (in_msg.Type == CoherenceRequestType:PutAck){
+                    trigger(Event:PutAck, in_msg.addr, cache_entry, tbe);
+                }
+                else{
+                    error("Unexpect forward request type");
+                }
+            }
+        }
+    }
+
+    // the last and the lowest priority in port
+    in_port(mandatory_in, RubyRequest, mandatoryQueue){
+        if(mandatory_in.isReady(clockEdge())){
+
+            // any ohter request on same line address will be blocked until the current is dealed
+            peek(mandatory_in, RubyRequest, block_on = "LineAddress"){
+                // refer to it by block-aligned addr
+                Entry cache_entry := getCacheEntry(in_msg.LineAddress);
+                TBE tbe := TBEs[in_msg.LineAddress];
+
+                // the cache entry not in cache at all
+                if (is_invalid(cache_entry) && cacheMemory.cacheAvail(in_msg.LineAddress) == false){
+
+                    /* parameterized replacement policy */
+
+                    Addr addr := cacheMemory.cacheProbe(in_msg.addr);
+                    Entry victim_entry := getCacheEntry(addr);
+                    TBE victim_tbe := TBEs[addr];
+                    trigger(Event:Replacement, addr, victim_entry, victim_tbe);
+                }
+                else{
+                    if (in_msg.Type == RubyRequestType:LD || in_msg.Type == RubyRequest:LFETCH){
+                        trigger(Event:Load, in_msg.LineAddress, cache_entry, tbe);
+                    }
+                    else if (in_msg.Type == RubyRequestType:ST){
+                        trigger(Event:Store, in_msg.LineAddress, cache_entry, tbe);
+                    }
+                    else{
+                        error("Unexpected request type from processor");
+                    }
+                }
+
+            }
+        }
     }
 }
