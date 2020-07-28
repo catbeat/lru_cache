@@ -15,7 +15,7 @@ enumeration(CoherenceRequestType, desc="The type of request"){
 Structure(RequestMsg, desc="Request Message sent from cache or dir", interface = "Message"){
     Addr addr,                          desc="The addr of thie request";
     CoherenceRequestType Type,          desc="The type of request";
-    MachineID Sender,                   desc="The sender who send this request";
+    MachineID Requestor,                   desc="The sender who send this request";
     NetDest Destination,                desc="multicast destination";
     DataBlock DataBlk,                       desc="the data to send from cache"
     MessageSizeType MessageSize,        desc="The size category of Message";
