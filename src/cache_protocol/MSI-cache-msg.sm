@@ -4,17 +4,31 @@ enumeration(CoherenceResponseType, desc="The type of response"){
 }
 
 enumeration(CoherenceRequestType, desc="The type of request"){
-    GetS,
-    GetM,
-    PutS,
-    PutM,
-    Inv,
-    PutAck,
+    GetS,       desc="request from cache to a block asking for shared information";
+    GetM,       desc="request from cache to a block asking for modified information";
+    PutS,       desc="sent to directory when evict a shared block";
+    PutM,       desc="sent to directory when evict a modified block";
+    Inv,        desc="request from directory to cache to invalid block";
+    PutAck,     desc="The put request has been processed";
 }
 
 Structure(RequestMsg, desc="Request Message sent from cache or dir", interface = "Message"){
-    Addr addr,
-    CoherenceRequestType Type,
+    Addr addr,                          desc="The addr of thie request";
+    CoherenceRequestType Type,          desc="The type of request";
+    MachineID Sender,                   desc="The sender who send this request";
+    NetDest Destination,                desc="multicast destination";
+    DataBlock DataBlk,                       desc="the data to send from cache"
+    MessageSizeType MessageSize,        desc="The size category of Message";
+
+    bool functionalRead(Packet *pkt){
+        // since no request has data, just return false
+        return false;
+    }
+
+    bool functionalWrite(Packet *pkt){
+        return testAndWrite(addr, DataBlk, pkt);
+    }
+    
 }
 
 structure(ResponseMsg, desc="Response Message from directory or sibling cache after forward request", interface="Message"){
@@ -22,7 +36,20 @@ structure(ResponseMsg, desc="Response Message from directory or sibling cache af
     CoherenceResponseType Type,         desc = "The type of the response type such as 'Inv-Ack'";
     MachineID Sender,                   desc="The numebr of node sending this response";
     NetDest Destination,                desc="multicast destination";
-    DataBlk data,                       desc="The return data";
+    DataBlock DataBlk,                       desc="The return data";
     MessageSizeType MessageSize,        desc="The size category of Message";
     int Acks,                           desc="The information of acks";
+
+    bool functionalRead(Packet *pkt){
+        if (Type == CoherenceResponseType:Data){
+            return testAndRead(addr, DataBlk, pkt);
+        }
+        
+        return false;
+    }
+
+    bool functionalWrite(Packet *pkt){
+        // since write after read and we only read Data response, so no need to check
+        return testAndWrite(addr, DataBlk, pkt);
+    }
 }
