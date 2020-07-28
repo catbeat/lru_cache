@@ -325,4 +325,95 @@ machine(MachineType:L1Cache, "MSI Cache")
             }
         }
     }
+
+    // action part 
+
+    action(sendGetS, desc="send GetS to directory"){
+        // 1 is the cache latency, here is the miss in L1 cache
+        enqueue(request_out, RequestMsg, 1){
+            out_msg.addr := address;        // address is the value addr passed to trigger
+            out_msg.Type := CoherenceRequestType:GetS;
+            out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
+
+            out_msg.Requestor := machineID;
+            out_msg:MessageSize := MessageSizeType:Control;
+        }
+    }
+
+    action(sendGetM, desc="send GetM to directory"){
+        enqueue(request_out, RequestMsg, 1){
+            out_msg.addr := address;
+            out_msg.Type := CoherenceRequestType:GetM;
+            out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
+
+            out_msg.Requestor := machineID;
+            out_msg:MessageSize := MessageSizeType:Control;
+        }
+    }
+
+    action(sendPutS, desc="send PutS to directory"){
+        enqueue(request_out, RequestMsg, 1){
+            out_msg.addr := address;
+            out_msg.Type := CoherenceRequestType:PutS;
+            out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
+
+            out_msg.Requestor := machineID;
+            out_msg:MessageSize := MessageSizeType:Control;
+        }
+    }
+
+    // since it's putM, we must give out the modified data
+    action(sendPutM, desc="send PutM to directory"){
+        enqueue(request_out, RequestMsg, 1){
+            out_msg.addr := address;
+            out_msg.Type := CoherenceRequestType:PutM;
+            out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
+
+            out_msg.Requestor := machineID;
+            out_msg:MessageSize := MessageSizeType:Control;
+            out_msg:DataBlk := cache_entry.DataBlk;
+        }
+    }
+
+    action(sendDataToReq, desc="response to a forward request, it send data to the origin cache sending the request"){
+        assert(is_valid(cache_entry));
+        peek(forward_in, RequestMsg){
+            enqueue(response_out, ResponseMsg, 1){
+                out_msg.addr = address;
+                out_msg.Type := CoherenceResponseType:Data;
+                out_msg.Destination.add(in_msg.Requestor);
+
+                out_msg.DataBlk := cache_entry.DataBlk;     // that's why I check before peek
+                out_msg.MessageSize := MessageSizeType:Control;
+                out_msg.Sender := machineID;
+            }
+        }
+    }
+
+    action(sendDataToDir, desc="response to a forward request, it send data to the sender directory"){
+        assert(is_valid(cache_entry));
+        enqueue(response_out, ResponseMsg, 1){
+            out_msg.addr := address;
+            out_msg.Type := CoherenceRequestType:Data;
+            out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
+
+            out_msg.Sender := machineID;
+            out_msg:MessageSize := MessageSizeType:Control;
+            out_msg:DataBlk := cache_entry.DataBlk;
+        }
+    }
+
+    action(sendInvAck, desc="send Inv ack to origin cache"){
+        peek(forward_in, RequestMsg){
+            enqueue(response_out, ResponseMsg, 1){
+                out_msg.addr := address;
+                out_msg.Type := CoherenceRequestType:InvAck;
+                out_msg.Destination.add(in_msg.Requestor);
+
+                out_msg.Sender := machineID;
+                out_msg:MessageSize := MessageSizeType:Control;
+                out_msg:DataBlk := cache_entry.DataBlk;
+            }
+        }
+    }
 }
