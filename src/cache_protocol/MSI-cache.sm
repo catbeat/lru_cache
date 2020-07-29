@@ -65,7 +65,7 @@ machine(MachineType:L1Cache, "MSI Cache")
         Replacement,    desc="Triggered when find victim"
 
         FwdGetS,        desc="Directory send this to satisfy getS, it ask a cache to change M to S for response";
-        FwdGetM,        desc="Directory send this to satisfy getM, it ask a cache to change M to I for resposne";
+        FwdGetM,        desc="Directory send this to satisfy getM, it ask a cache to change M to I for response";
         Inv,            desc="Directory send this to invalidate a cache's shared tag";
         PutAck,         desc="Directory respond when we issue put, it avoids deadlock";
 
@@ -328,7 +328,7 @@ machine(MachineType:L1Cache, "MSI Cache")
 
     // action part 
 
-    action(sendGetS, desc="send GetS to directory"){
+    action(sendGetS, 'gS', desc="send GetS to directory"){
         // 1 is the cache latency, here is the miss in L1 cache
         enqueue(request_out, RequestMsg, 1){
             out_msg.addr := address;        // address is the value addr passed to trigger
@@ -340,7 +340,7 @@ machine(MachineType:L1Cache, "MSI Cache")
         }
     }
 
-    action(sendGetM, desc="send GetM to directory"){
+    action(sendGetM, "gM", desc="send GetM to directory"){
         enqueue(request_out, RequestMsg, 1){
             out_msg.addr := address;
             out_msg.Type := CoherenceRequestType:GetM;
@@ -351,7 +351,7 @@ machine(MachineType:L1Cache, "MSI Cache")
         }
     }
 
-    action(sendPutS, desc="send PutS to directory"){
+    action(sendPutS, "pS", desc="send PutS to directory"){
         enqueue(request_out, RequestMsg, 1){
             out_msg.addr := address;
             out_msg.Type := CoherenceRequestType:PutS;
@@ -363,7 +363,7 @@ machine(MachineType:L1Cache, "MSI Cache")
     }
 
     // since it's putM, we must give out the modified data
-    action(sendPutM, desc="send PutM to directory"){
+    action(sendPutM, "pM", desc="send PutM to directory"){
         enqueue(request_out, RequestMsg, 1){
             out_msg.addr := address;
             out_msg.Type := CoherenceRequestType:PutM;
@@ -375,7 +375,7 @@ machine(MachineType:L1Cache, "MSI Cache")
         }
     }
 
-    action(sendDataToReq, desc="response to a forward request, it send data to the origin cache sending the request"){
+    action(sendDataToReq, "dR", desc="response to a forward request, it send data to the origin cache sending the request"){
         assert(is_valid(cache_entry));
         peek(forward_in, RequestMsg){
             enqueue(response_out, ResponseMsg, 1){
@@ -390,7 +390,7 @@ machine(MachineType:L1Cache, "MSI Cache")
         }
     }
 
-    action(sendDataToDir, desc="response to a forward request, it send data to the sender directory"){
+    action(sendDataToDir, "dD", desc="response to a forward request, it send data to the sender directory"){
         assert(is_valid(cache_entry));
         enqueue(response_out, ResponseMsg, 1){
             out_msg.addr := address;
@@ -403,7 +403,7 @@ machine(MachineType:L1Cache, "MSI Cache")
         }
     }
 
-    action(sendInvAck, desc="send Inv ack to origin cache"){
+    action(sendInvAck, "iaR", desc="send Inv ack to origin cache"){
         peek(forward_in, RequestMsg){
             enqueue(response_out, ResponseMsg, 1){
                 out_msg.addr := address;
@@ -415,5 +415,110 @@ machine(MachineType:L1Cache, "MSI Cache")
                 out_msg:DataBlk := cache_entry.DataBlk;
             }
         }
+    }
+
+    action(decrAck, "da", desc="decrease the number ack countings"){
+        assert(is_valid(tbe));      // since we need to decrease tbe's AckOutstanding, so it must be valid
+        tbe.AckOutstanding := tbe.AckOutstanding - 1;
+        APPEND_TRANSITION_COMMENT("Acks: ");
+        APPEND_TRANSITION_COMMENT(tbe.AckOutstanding);
+    }
+
+    action(storeAck, "sa", desc="store the return ack"){
+        assert(is_valid(tbe));
+        peek(response_in, ResponseMsg){
+            tbe.AckOutstanding := in_msg.Acks + tbe.AckOutstanding;
+        }
+        assert(tbe.AckOutstanding > 0);
+    }
+
+    // action respond to CPU request
+
+    assert(LoadHit, "Lh", desc="load hit"){
+        assert(is_valid(cache_entry));
+        cacheMemory.setMRU(cache_entry);
+        sequencer.readCallBack(address, cache_entry.DataBlk, false);  // not miss
+    }
+
+    assert(externalLoadHit, "xLh", desc="external load hit( meeting a miss )"){
+        assert(is_valid(cache_entry));
+        peek(response_in, ResponseMsg){
+            cacheMemory.setMRU(cache_entry);
+            sequencer.readCallBack(in_msg.addr, cache_entry.DataBlk, true, MachineIDToMachineType(in_msg.Sender));
+        }
+    }
+
+    assert(StoreHit, "Sh", desc="Store hit"){
+        assert(is_valid(cache_entry));
+        cacheMemory.setMRU(cache_entry);
+        sequencer.writeCallBack(address, cache_entry.DataBlk, false);
+    }
+
+    assert(externalStoreHit, "eSh", desc="external store hit( meeting a miss)"){
+        assert(is_valid(cache_entry));
+        peek(response_in, ResponseMsg){
+            cacheMemory.setMRU(cache_entry);
+            sequencer.writeCallBack(in_msg.addr, cache_entry.DataBlk, true, MachineIDToMachineType(in_msg.Sender));
+        }
+    }
+
+    assert(forwardEviction, "evict", desc="tell cpu the eviction of cache"){
+        if (send_evictions){
+            sequencer.evictionCallBack(address);
+        }
+    }
+
+    // action of managing cache memory
+
+    action(allocateCacheBlock, "a", desc="allocate a cache block"){
+        // the ordered memory shouldn't be in cache
+        assert(is_invalid(cache_entry));
+        cacheMemory.cacheAvail(address);
+
+        // now we allocate
+        set_cache_entry(cacheMemory.allocate(address, new Entry));
+    }
+
+    action(deallocateCacheBlock, "d", desc="deallocate a cache block"){
+        assert(is_valid(cache_entry));
+        cacheMemory.deallocate(address);
+        unset_cache_entry();
+    }
+
+    action(writeDataToCache, "wd", desc="write Data to the cache"){
+        peek(response_in, ResponseMsg){
+            assert(is_valid(cache_entry));
+            cache_entry.DataBlk := in_msg.DataBlk;
+        }
+    }
+
+    action(allocateTBE, "aT", desc="allocate a tbe"){
+        assert(is_invalid(tbe));
+        TBEs.allocate(address);
+        set_tbe(TBEs.allocate(address));
+    }
+
+    action(deallocateTBE, "dT", desc="deallocate a tbe"){
+        assert(is_valid(tbe));
+        TBEs.deallocate(address);
+        unset_tbe();
+    }
+
+    action(copyDataFromCacheToTBE, "DcT", desc="copy data from cache to tbe block"){
+        assert(is_valid(tbe));
+        assert(is_valid(cache_entry));
+        tbe.DataBlk := cache_entry.DataBlk
+    }
+
+    action(popMandatoryQueue, "pQ", desc="pop message from mandatory_in"){
+        mandatory_in.dequeue(clockEdge());
+    }
+
+    action(popResponseIn, "pR", desc="pop message from response queue"){
+        response_in.dequeue(clockEdge());
+    }
+
+    action(popForwardIn, "pF", desc="pop message from forward queue"){
+        forward_in.dequeue(clockEdge());
     }
 }
