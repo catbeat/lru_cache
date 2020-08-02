@@ -521,4 +521,30 @@ machine(MachineType:L1Cache, "MSI Cache")
     action(popForwardIn, "pF", desc="pop message from forward queue"){
         forward_in.dequeue(clockEdge());
     }
+
+    action(stall, "s", desc="stall incoming request"){
+        // z_stall
+    }
+
+    // transition part
+
+    transition(I, Load, IS_D){
+        allocateCacheBlock;
+        allocateTBE;
+        sendGetS;
+        popMandatoryQueue;
+    }
+
+    transition(IS_D, {Load, Store, Replacement, Inv}){
+        stall;
+    }
+
+    transition(IS_D, {DataDirNoAcks, DataOwner}, S){
+        writeDataToCache;
+        deallocateTBE;
+        externalStoreHit;
+        popMandatoryQueue;
+    }
+
+    transition()
 }
