@@ -37,7 +37,7 @@ machine(MachineType:L1Cache, "MSI Cache")
 
         IS_D, AccessPermission:Invalid, desc="from invalid to share, waiting for data";
         IM_AD, AccessPermission:Invalid, desc="from invalid to modify, waiting for acks and data, when that was M in another core's cache";
-        IM_A, AccessPermission:Busy, desc="from invalid to modify, waiting  for acks";
+        IM_A, AccessPermission:Busy, desc="from invalid to modify, waiting for acks";
 
         S, AccessPermission:Read_Only, desc="shared";
 
@@ -434,13 +434,13 @@ machine(MachineType:L1Cache, "MSI Cache")
 
     // action respond to CPU request
 
-    assert(LoadHit, "Lh", desc="load hit"){
+    action(LoadHit, "Lh", desc="load hit"){
         assert(is_valid(cache_entry));
         cacheMemory.setMRU(cache_entry);
         sequencer.readCallBack(address, cache_entry.DataBlk, false);  // not miss
     }
 
-    assert(externalLoadHit, "xLh", desc="external load hit( meeting a miss )"){
+    action(externalLoadHit, "xLh", desc="external load hit( meeting a miss )"){
         assert(is_valid(cache_entry));
         peek(response_in, ResponseMsg){
             cacheMemory.setMRU(cache_entry);
@@ -448,13 +448,13 @@ machine(MachineType:L1Cache, "MSI Cache")
         }
     }
 
-    assert(StoreHit, "Sh", desc="Store hit"){
+    action(StoreHit, "Sh", desc="Store hit"){
         assert(is_valid(cache_entry));
         cacheMemory.setMRU(cache_entry);
         sequencer.writeCallBack(address, cache_entry.DataBlk, false);
     }
 
-    assert(externalStoreHit, "eSh", desc="external store hit( meeting a miss)"){
+    action(externalStoreHit, "eSh", desc="external store hit( meeting a miss)"){
         assert(is_valid(cache_entry));
         peek(response_in, ResponseMsg){
             cacheMemory.setMRU(cache_entry);
@@ -462,7 +462,7 @@ machine(MachineType:L1Cache, "MSI Cache")
         }
     }
 
-    assert(forwardEviction, "evict", desc="tell cpu the eviction of cache"){
+    action(forwardEviction, "evict", desc="tell cpu the eviction of cache"){
         if (send_evictions){
             sequencer.evictionCallBack(address);
         }
@@ -543,8 +543,110 @@ machine(MachineType:L1Cache, "MSI Cache")
         writeDataToCache;
         deallocateTBE;
         externalStoreHit;
+        popResponseIn;
+    }
+
+    transition({IM_AD, IM_A}, {Load, Store, Replacement, Inv, FwdGetS, FwdGetM}){
+        stall;
+    }
+
+    transition({IM_AD, SM_AD}, {DataDirNoAcks, DataOwner}, M){
+        writeDataToCache;
+        deallocateTBE;
+        externalStoreHit;
+        popResponseIn;
+    }
+
+    transition(IM_AD, DataDirAcks, IM_A){
+        writeDataToCache;
+        storeAck;
+        popResponseIn;
+    }
+
+    transition({IM_AD, IM_A, SM_AD, SM_A}, InvAck){
+        decrAck;
+        popResponseIn;
+    }
+
+    transition({IM_A, SM_A}, LastInvAck, M){
+        deallocateTBE;
+        externalStoreHit;
+        popResponseIn;
+    }
+
+    transition({S, SM_AD, SM_A, M}, Load){
+        LoadHit;
         popMandatoryQueue;
     }
 
-    transition()
+    transition(S, Store, SM_AD){
+        allocateTBE;
+        sendGetM;
+        popMandatoryQueue;
+    }
+
+    transition(S, Replacement, SI_A){
+        sendPutS;
+        forwardEviction;
+    }
+
+    transition(S, Inv, I){
+        sendInvAck;
+        deallocateCacheBlock;
+        forwardEviction;
+        popForwardIn;
+    }
+
+    transition(SM_AD, DataDirAcks, SM_A){
+        writeDataToCache;
+        storeAck;
+        popResponseIn;
+    }
+
+    transition(M, Store){
+        StoreHit;
+        popMandatoryQueue;
+    }
+
+    transition(M, Replacement, MI_A){
+        sendPutM;
+        popForwardIn;
+    }
+
+    transition(M, FwdGetS, S){
+        sendDataToReq;
+        sendDataToDir;
+        popForwardIn;
+    }
+
+    transition(M, FwdGetM, I){
+        sendDataToReq;
+        deallocateCacheBlock;
+        popForwardIn;
+    }
+
+    transition({MI_A, SI_A, II_A}, {Load, Store, Replacement}){
+        stall;
+    }
+
+    transition(MI_A, FwdGetS, SI_A){
+        sendDataToDir;
+        sendDataToDir;
+        popForwardIn;
+    }
+
+    transition(MI_A, FwdGetM, II_A){
+        sendDataToReq;
+        popForwardIn;
+    }
+
+    transition({MI_A, SI_A, II_A}, PutAck, I){
+        deallocateCacheBlock;
+        popForwardIn;
+    }
+    
+    transition(SI_A, Inv, II_A){
+        sendInvAck;
+        popForwardIn;
+    }
 }
