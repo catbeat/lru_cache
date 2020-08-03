@@ -1,0 +1,420 @@
+machine(MachineType:Directory, "Directory Protocol")
+:
+ DirectoryMemory *directory;
+ Cycles toMemLatency := 1;
+
+ MessageBuffer *fowardToCache, network="To", virtual_network="1", vnet_type="foward";
+ MessageBuffer *responseToCache, network="To", virtual_network="2", vnet_type="response";
+ MessageBuffer *requestFromCache, network="From", virtual_network="0", vnet_type="request";
+ MessageBuffer *responseFromCache, network="From", virtual_network="2", vnet_type="response";
+
+ MessageBuffer *responseFromMemory;
+{
+    state_declaration(State, desc="Directory State", default="Directory_State_I"){
+        I, AccessPermission:Read_Write, desc="Invalid in the caches";
+        S, AccessPermission:Read_Only, desc="Shared by many caches";
+        M, AccessPermission:Invalid, desc="modified by exactly one cache";
+
+        S_D, AccessPermission:Busy, desc="Moving to S but waiting for Data";
+
+        S_m, AccessPermission:Read_Write, desc="In S waiting for memory since data coming from mem need latency";
+        M_m, AccessPermission:Read_Write, desc="Moving to M waiting for memory";
+
+        MI_m, AccessPermission:Busy, desc="Moving to I waiting for ack";
+        SS_m, AccessPermission:Busy, desc="Moving to S waiting for ack";
+    }
+
+    enumeration(Event, desc="Directory Event"){
+        GetS, desc="Request for read only data from cache";
+        GetM, desc="Request for read write data from cache";
+
+        PutSNotLast, desc="PutS from not last sharer";
+        PutSLast, desc="PutS from the last sharer";
+
+        PutMOwner, desc="PutM from owner";
+        PutMNonOwner, desc="PutM from Non Owner";
+
+        Data, desc="Response to fwd request from cache of Data";
+
+        MemData, desc="Data from memory";
+        MemAck, desc="Response from memory that write is complete";
+    }
+
+    structure(Entry, desc="entry of directory", interface="AbstractEntry"){
+        State DirState, desc="the state of entry";
+        NetDest Sharers, desc="sharers of entry";
+        NetDest Owner, desc="owner of entry";
+    }
+
+    Tick clockEdge();
+
+    Entry getDirectoryEntry(Addr addr), return_by_pointer = "yes" {
+        Entry dir_entry := static_cast(Entry, "pointer", directory[addr]);
+
+        // first time we got the entry for this address
+        if (is_invalid(dir_entry)){
+            dir_entry := static_cast(Entry, "pointer", directory.allocate(addr, new Entry));
+        }
+
+        return dir_entry;
+    }
+
+    State getState(Addr addr){
+        if (directory.isPresent(addr)){
+            return directory.getDirectoryEntry(addr).DirState;
+        }
+        else{
+            return State:I;
+        }
+    }
+
+    void setState(Addr addr, State state){
+        if (directory.isPresent(addr)){
+            if (state == State:M){
+                DPRINTF(RubySlicc, "Owner %s\n", getDirectoryEntry(addr).Owner);
+                assert(directory.getDirectoryEntry(addr).Owner.count() == 1);
+                assert(directory.getDirectoryEntry(addr).Sharers.count() == 0);
+            }
+
+            directory.getDirectoryEntry(addr).DirState := state;
+
+            if (state == State:I){
+                assert(directory.getDirectoryEntry(addr).Owner.count() == 0);
+                assert(directory.getDirectoryEntry(addr).Sharers.count() == 0);
+            }
+        }
+    }
+
+    AccessPermission getAccessPermission(Addr addr){
+        if (directory.isPresent(addr)){
+            Entry e := getDirectoryEntry(addr);
+            return Directory_State_to_permission(e.DirState);
+        }
+        else{
+            return AccessPermission:NotPresent;
+        }
+    }
+
+    void setAccessPermission(Addr addr, State state){
+        if (directory.isPresent(addr)){
+            Entry e:= getDirectoryEntry(addr);
+            e.changePermission(Directory_State_to_permission(state));
+        }
+    }
+
+    void functionalRead(Addr addr, Packet *pkt){
+        functionalMemoryRead(pkt);
+    }
+
+    int functionalWrite(Addr addr, Packet *pkt){
+        if (functionalMemoryWrite(pkt)){
+            return 1;
+        }
+        else{
+            return 0;
+        }
+    }
+
+    out_port(forward_out, RequestMsg, ForwardToCache);
+    out_port(response_out, ResponseMsg, ResponseToCache);
+
+    in_port(memQueue_in, MemoryMsg, responseFromMemory){
+        if (memQueue_in.isReady(clockEdge())){
+            peek(memQueue_in, MemoryMsg){
+                if (in_msg.Type == MemoryRequestType:MEMORY_READ){
+                    trigger(Event:MemData, in_msg.addr);
+                }
+                else if (in_msg.Type == MemoryRequestType:MEMORY_WB){
+                    trigger(Event:MemAck, in_msg.addr);
+                }
+                else{
+                    error("Invalid Message");
+                }
+            }
+        }
+    }
+
+    in_port(response_in, ResponseMsg, responseFromCache){
+        if (response_in.isReady(clockEdge())){
+            peek(response_in, ResponseMsg){
+                if (in_msg.Type == CoherenceResponseType:Data){
+                    trigger(Event:Data, in_msg.addr);
+                }
+                else{
+                    error("Unexpected response from cache");
+                }
+            }
+        }
+    }
+
+    in_port(request_in, RequestMsg, requestFromCache){
+        if (request_in.isReady(clockEdge())){
+            peek(request_in, RequestMsg){
+                Entry e := getDirectoryEntry(in_msg.addr);
+                if(in_msg.Type == CoherenceRequestType:GetS){
+                    trigger(Event:GetS, in_msg.addr);
+                }
+                else if (in_msg.Type == CoherenceRequestType:GetM){
+                    trigger(Event:GetM, in_msg.addr);
+                }
+                else if (in_msg.Type == CoherenceRequestType:PutS){
+                    assert(is_valid(e));
+                    if (e.Sharers.count() == 1){
+                        assert(e.Sharers.isElement(in_msg.Requestor));
+                        trigger(Event:PutSLast, in_msg.addr);
+                    }
+                    else{
+                        trigger(Event:PutSNotLast, in_msg.addr);
+                    }
+                }
+                else if (in_msg.Type == CoherenceRequestType:PutM){
+                    assert(is_valid(e));
+                    if (e.Owner.isElement(in_msg.Requestor)){
+                        trigger(Event:PutMOwner, in_msg.addr);
+                    }
+                    else{
+                        trigger(Event:PutMNonOwner, in_msg.addr);
+                    }
+                }
+                else{
+                    error("Unexpected Message Type");
+                }
+            }
+        }
+
+        action(sendMemoryRead, "r", desc="send a read request to memory"){
+            peek(request_in, RequestMsg){
+                queueMemoryRead(in_msg.Requestor, address, toMemLatency);
+            }
+        }
+
+        action(sendDataToMem, "w", desc="Write Data to memory"){
+            peek(request_in, RequestMsg){
+                DPRINTF(RubySlicc, "Writing memory for %#x\n", address);
+                DPRINTF(RubySlicc, "Writing %s\n", in_msg.DataBlk);
+                queueMemoryWrite(in_msg.Requestor, address, toMemLatency, in_msg.DataBlk);
+            }
+        }
+
+        action(sendRespDataToMem, "rw", desc="Write Data from response to memory"){
+            peek(response_in, ResponseMsg){
+                DPRINTF(RubySlicc, "Writing memory for %#x\n", address);
+                DPRINTF(RubySlicc, "Writing %s\n", in_msg.DataBlk);
+                queueMemoryWrite(in_msg.Sender, address, toMemLatency, in_msg.DataBlk)
+            }
+        }
+
+        action(addReqToSharer, "aS", desc="put the requestor into sharers"){
+            peek(request_in, RequestMsg){
+                getDirectoryEntry(address).Sharers.add(in_msg.Requestor);
+            }
+        }
+
+        action(setOwner, "sO", desc="set Owner for entry"){
+            peek(request_in, RequestMsg){
+                getDirectoryEntry(address).Owner.add(in_msg.Requestor);
+            }
+        }
+
+        action(addOwnerToSharer, "oS", desc="put the Owner into Sharer"){
+            Entry e := getDirectoryEntry(address);
+            assert(e.Owner.count() == 1);
+            e.Sharers.addNetDest(e.Owner);
+        }
+
+        action(removeReqFromSharer, "rS", desc="remove the requestor from sharers"){
+            peek(request_in, RequestMsg){
+                getDirectoryEntry(address).Sharers.remove(in_msg.Requestor);
+            }
+        }
+
+        action(clearSharers, "cS", desc="clear the sharer list"){
+            getDirectoryEntry(address).Sharers.clear();
+        }
+
+        action(clearOwner, "cO", desc="clear the onwer"){
+            getDirectoryEntry(address).Owner.clear();
+        }
+
+        action(sendInvToSharers, "i", desc="invalid all sharers"){
+            peek(request_in, RequestMsg){
+                enqueue(forward_out, RequestMsg, 1){
+                    out_msg.addr := address;
+                    out_msg.Type := CoherenceRequestType:Inv;
+                    out_msg.Requestor := in_msg.Requestor;
+                    out_msg.Destination := getDirectoryEntry(address).Sharers;
+                    out_msg.MessageSize := MessageSizeType:Control;
+                }
+            }
+        }
+
+        action(sendFwdGetS, "fS", desc="send fwd getS to the owner of entry"){
+            peek(request_in, RequestMsg){
+                enqueue(forward_out, RequestMsg, 1){
+                    out_msg.addr := address;
+                    out_msg.Type := CoherenceRequestType:GetS;
+                    out_msg.Requestor := in_msg.Requestor;
+                    out_msg.Destination := getDirectoryEntry(address).Owner;
+                    out_msg.MessageSize := MessageSizeType:Control;
+                }
+            }
+        }
+
+        action(sendFwdGetM, "fM", desc="send fwd getM to the owner of entry"){
+            peek(request_in, RequestMsg){
+                enqueue(forward_out, RequestMsg, 1){
+                    out_msg.addr := address;
+                    out_msg.Type := CoherenceRequestType:GetM;
+                    out_msg.Requestor := in_msg.Requestor;
+                    out_msg.Destination := getDirectoryEntry(address).Owner;
+                    out_msg.MessageSize := MessageSizeType:Control;
+                }
+            }
+        }
+
+        action(sendDataToReq, "d", desc="send data from memory to requestor"){
+            peek(memQueue_in, MemoryMsg){
+                enqueue(response_out, ResponseMsg, 1){
+                    out_msg.addr := address;
+                    out_msg.Type := CoherenceResponseType:Data;
+                    out_msg.Sender := machineID;
+                    out_msg.Destination.add(in_msg.OriginalRequestorMachId);
+                    out_msg.DataBlk := in_msg.DataBlk;
+                    out_msg.MessageSize := MessageSizeType:Data;
+                    Entry e := getDirectoryEntry(address);
+                    if (e.Owner.isElement(in_msg.OriginalRequestorMachId)){
+                        out_msg.Acks := e.Sharers.count();
+                    }
+                    else{
+                        out_msg.Acks := 0;
+                    }
+
+                    assert(out_msg.Acks >= 0);
+                }
+            }
+        }
+
+        action(sendPutAck, "a", desc="Send the put ack"){
+            peek(request_in, RequestMsg){
+                enqueue(forward_out, RequestMsg, 1){
+                    out_msg.addr := address;
+                    out_msg.Type := CoherenceRequestType:PutAck;
+                    out_msg.Requestor := machineID;
+                    out_msg.Destination.add(in_msg.Requestor);
+                    out_msg.MessageSize := MessageSizeType:Control;
+                }
+            }
+        }
+
+        action(popResponseIn, "pR", desc="Pop the response queue"){
+            response_in.dequeue(clockEdge());
+        }
+
+        action(popRequestIn, "pQ", desc="Pop the request queue"){
+            request_in.dequeue(clockEdge());
+        }
+
+        action(popMemQueue, "pM", desc="Pop the memory queue"){
+            memQueue_in.dequeue(clockEdge());
+        }
+
+        action(stall, "z", desc="stall"){
+            // ...
+        }
+
+        transition({I, S}, GetS, S_m){
+            sendMemoryRead;
+            addReqToSharer;
+            popRequestIn;
+        }
+
+        transition(I, {PutSLast, PutSNotLast, PutMNonOwner}){
+            sendPutAck;
+            popRequestIn;
+        }
+
+        transition(I, GetM, M_m){
+            sendMemoryRead;
+            setOwner;
+            popRequestIn;
+        }
+
+        transition(S_m, MemData, S){
+            sendDataToReq;
+            popMemQueue;
+        }
+
+        transition({S, S_D, S_m, SS_m}, PutSNotLast){
+            removeReqFromSharer;
+            popRequestIn;
+        }
+
+        transition(S, PutSLast, I){
+            removeReqFromSharer;
+            sendPutAck;
+            popRequestIn;
+        }
+
+        transition(S, GetM, M_m){
+            sendMemoryRead;
+            sendInvToSharers;
+            sendDataToReq;
+            setOwner;
+            popRequestIn;
+        }
+
+        transition(M, GetS, S_D){
+            sendFwdGetS;
+            addReqToSharer;
+            addOwnerToSharer;
+            clearOwner;
+            popRequestIn;
+        }
+
+        transition(M, GetM){
+            sendFwdGetM;
+            clearOwner;
+            setOwner;
+            popRequestIn;
+        }
+
+        transition({M, M_m, MI_m}, {PutMNonOwner, PutSLast, PutSNotLast}){
+            sendPutAck;
+            popRequestIn;
+        }
+
+        transition(M, PutMOwner, MI_m){
+            sendDataToMem;
+            clearOwner;
+            sendPutAck;
+            popRequestIn;
+        }
+
+        transition(MI_m, MemAck, I){
+            popMemQueue;
+        }
+
+        transition(S_D, {GetS, GetM}){
+            stall;
+        }
+
+        transition(S_D, PutSLast){
+            removeReqFromSharer;
+            sendPutAck;
+            popRequestIn;
+        }
+
+        transition(S_D, Data, SS_m){
+            sendRespDataToMem;
+            popResponseIn;
+        }
+
+        transition(SS_m, MemAck, S){
+            popMemQueue;
+        }
+
+        transition({MI_m, SS_m, M_m, S_m}, {GetS, GetM}){
+            stall;
+        }
+    }
+}
