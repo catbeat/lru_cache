@@ -9,6 +9,7 @@ machine(MachineType:Directory, "Directory Protocol")
  MessageBuffer *responseFromCache, network="From", virtual_network="2", vnet_type="response";
 
  MessageBuffer *responseFromMemory;
+ MessageBuffer *requestToMemory;
 {
     state_declaration(State, desc="Directory State", default="Directory_State_I"){
         I, AccessPermission:Read_Write, desc="Invalid in the caches";
@@ -117,6 +118,7 @@ machine(MachineType:Directory, "Directory Protocol")
 
     out_port(forward_out, RequestMsg, ForwardToCache);
     out_port(response_out, ResponseMsg, ResponseToCache);
+    out_port(memoryQueue_out, RequestMsg, RequestToMemory);
 
     in_port(memQueue_in, MemoryMsg, responseFromMemory){
         if (memQueue_in.isReady(clockEdge())){
