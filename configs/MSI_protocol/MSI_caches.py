@@ -7,8 +7,40 @@ class MyCacheSystem(RubySystem):
             panic("This system assumes MSI to be the protocol");
 
         super(MyCacheSystem, self).__init__()
-        
 
+    def setup(self, system, cpus, mem_ctrls):
+        self.network = MyNetwork(self)
+
+        self.number_of_virtual_networks = 3
+        self.network.number_of_virtual_networks = 3
+
+        self.controllers = [L1Cache(system, self, cpu) for cpu in cpus] + [DirController(self, system.mem_ranges, mem_ctrls)]
+        
+        self.sequencers = [RubySequencer(version = i, icache = self.controllers[i].cacheMemory, dcache = self.controllers[i].cacheMemory, clk_domain = self.controllers[i].clk_domain) for i in len(cpus)]
+
+        for i,c in enumerate(self.controllers[0:len(self.sequencers)]):
+            c.sequencer = self.sequencers[i]
+
+        self.num_of_sequencers = len(self.sequencers)
+
+        self.network.connectControllers(self.controllers)
+        self.network.setup_buffers()
+
+        self.sys_port_proxy = RubyPortProxy()
+        system.system_port = self.sys_port_proxy.slave
+
+        for i, cpu in enumerate(cpus):
+            cpu.icache_port = self.sequencers[i].slave
+            cpu.dcache_port = self.sequencers[i].slave
+
+            isa = buildEnv['TARGET_ISA']
+            if isa == 'x86':
+                cpu.interrupts[0].pio = self.sequencers[i].master
+                cpu.interrupts[0].int_master = self.sequencers[i].slave
+                cpu.interrupts[0].int_slave = self.sequencers[i].master
+            if isa == 'x86' or isa == 'arm':
+                cpu.itb.walker.port = self.sequencers[i].slave
+                cpu.dtb.walker.port = self.sequencers[i].slave
 
 class L1Cache(L1Cache_Controller):
 
@@ -94,3 +126,24 @@ class DirController(Directory_Controller):
 
     
 class MyNetwork(SimpleNetwork):
+
+    def __init__(self, ruby_system):
+        super(MyNetwork, self).__init__()
+        self.netifs = []
+        self.ruby_system = ruby_system
+
+    def connectControllers(self, controllers):
+        self.routers = [Switch(router_id = i) for i in range(len(controllers))]
+
+        self.ext_links = [SimpleExtLink(link_id = i, ext_node = c, int_node=self.routers[i]) for i,c in enumerate(controllers)]
+
+        link_count = 0
+        self.int_links = []
+
+        for i in self.routers:
+            for j in self.routers:
+                if i == j:
+                    continue
+                link_count += 1
+                self.int_links.append(SimpleIntLink(link_id = link_count, src_node = i, dst_node = j))
+                
