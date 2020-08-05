@@ -1,4 +1,12 @@
+from __future__ import print_function
+from __future__ import absolute_import
+
 import math
+
+from m5.defines import buildEnv
+from m5.util import fatal, panic
+
+from m5.objects import *
 
 class MyCacheSystem(RubySystem):
 
