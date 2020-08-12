@@ -7,19 +7,19 @@
 #include "base/random.hh"
 #include "params/SRRIPRP.hh"
 
-SRRIPRP(SRRIPRPParams *p)
-    :numOfRRPVBits(p->num_bits), hitPriority(p->hit_priority)
+SRRIPRP::SRRIPRP(const Params * p)
+    :BaseReplacementPolicy(p), numOfRRPVBits(p->num_bits), hitPriority(p->hit_priority)
 {
     fatal_if(numOfRRPVBits <= 0, "There should be at least one bit for RRPV counter bit");
 }
 
-void SRRIPRP::invalidate(const std::shared_ptr<ReplacementData>& replacementData )
+void SRRIPRP::invalidate(const std::shared_ptr<ReplacementData>& replacementData ) const
 {
     std::shared_ptr<SRRIPReplData> cast_replace_data = std::static_pointer_cast<SRRIPReplData>(replacementData);
     cast_replace_data->valid = false;
 }
 
-void SRRIPRP::touch(const std::shared_ptr<ReplacementData> & replacementData)
+void SRRIPRP::touch(const std::shared_ptr<ReplacementData> & replacementData) const
 {
     std::shared_ptr<SRRIPReplData> cast_replace_data = std::static_pointer_cast<SRRIPReplData>(replacementData);
 
@@ -31,7 +31,7 @@ void SRRIPRP::touch(const std::shared_ptr<ReplacementData> & replacementData)
     }
 }
 
-void SRRIPRP::reset(const std::shared_ptr<ReplacementData> & replacementData)
+void SRRIPRP::reset(const std::shared_ptr<ReplacementData> & replacementData) const
 {
     std::shared_ptr<SRRIPReplData> cast_replace_data = std::static_pointer_cast<SRRIPReplData>(replacementData);
 
@@ -40,7 +40,7 @@ void SRRIPRP::reset(const std::shared_ptr<ReplacementData> & replacementData)
     cast_replace_data->valid = true;
 }
 
-ReplaceableEntry* SRRIPRP::getVictim( const ReplacementCandidates& candidates)
+ReplaceableEntry* SRRIPRP::getVictim( const ReplacementCandidates& candidates) const
 {
     assert(candidates.size() > 0);
 
@@ -48,7 +48,7 @@ ReplaceableEntry* SRRIPRP::getVictim( const ReplacementCandidates& candidates)
     int victim_rrpv = std::static_pointer_cast<SRRIPReplData>(victim->replacementData)->rrpv;
 
     for (auto &candidate : candidates){
-        std::share_ptr<SRRIPReplData> Data = std::static_pointer_cast<SRRIPReplData>(candidate->replacementData);
+        std::shared_ptr<SRRIPReplData> Data = std::static_pointer_cast<SRRIPReplData>(candidate->replacementData);
         if (!Data->valid){
             return candidate;
         }
@@ -63,7 +63,7 @@ ReplaceableEntry* SRRIPRP::getVictim( const ReplacementCandidates& candidates)
 
     if (diff > 0){
         for (auto &candidate : candidates){
-            std::share_ptr<SRRIPReplData> Data = std::static_pointer_cast<SRRIPReplData>(candidate->replacementData);
+            std::shared_ptr<SRRIPReplData> Data = std::static_pointer_cast<SRRIPReplData>(candidate->replacementData);
             Data->rrpv += diff;
         }
     
@@ -74,7 +74,7 @@ ReplaceableEntry* SRRIPRP::getVictim( const ReplacementCandidates& candidates)
 
 std::shared_ptr<ReplacementData> SRRIPRP::instantiateEntry()
 {
-    return std::shared_ptr<ReplacementData>(new SRRIPReplData(numRRPVBits));
+    return std::shared_ptr<ReplacementData>(new SRRIPReplData(numOfRRPVBits));
 }
 
 SRRIPRP* SRRIPRPParams::create()
