@@ -40,3 +40,34 @@ void SRRIPRP::reset(const std::shared_ptr<ReplacementData> & replacementData)
     cast_replace_data->valid = true;
 }
 
+ReplaceableEntry* SRRIPRP::getVictim( const ReplacementCandidates& candidates)
+{
+    assert(candidates.size() > 0);
+
+    ReplaceableEntry *victim = candidates[0];
+    int victim_rrpv = std::static_pointer_cast<SRRIPReplData>(victim->replacementData)->rrpv;
+
+    for (auto &candidate : candidates){
+        std::share_ptr<SRRIPReplData> Data = std::static_pointer_cast<SRRIPReplData>(candidate->replacementData);
+        if (!Data->valid){
+            return candidate;
+        }
+
+        if (Data->rrpv > victim_rrpv){
+            victim = candidate;
+            victim_rrpv = Data->rrpv;
+        }
+    }
+
+    int diff = std::static_pointer_cast<SRRIPReplData>(victim->replacementData)->rrpv.saturate();
+
+    if (diff > 0){
+        for (auto &candidate : candidates){
+            std::share_ptr<SRRIPReplData> Data = std::static_pointer_cast<SRRIPReplData>(candidate->replacementData);
+            Data->rrpv += diff;
+        }
+    
+    }
+
+    return victim;
+}
