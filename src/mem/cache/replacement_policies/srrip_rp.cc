@@ -71,3 +71,13 @@ ReplaceableEntry* SRRIPRP::getVictim( const ReplacementCandidates& candidates)
 
     return victim;
 }
+
+std::shared_ptr<ReplacementData> SRRIPRP::instantiateEntry()
+{
+    return std::shared_ptr<ReplacementData>(new SRRIPReplData(numRRPVBits));
+}
+
+SRRIPRP* SRRIPRPParams::create()
+{
+    return new SRRIPRP(this);
+}
