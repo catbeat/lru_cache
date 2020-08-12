@@ -99,7 +99,7 @@ class BaseCache(ClockedObject):
          "Notify the hardware prefetcher on every access (not just misses)")
 
     tags = Param.BaseTags(BaseSetAssoc(), "Tag store")
-    replacement_policy = Param.BaseReplacementPolicy(LRURP(),
+    replacement_policy = Param.BaseReplacementPolicy(BRRIPRP(),
         "Replacement policy")
 
     compressor = Param.BaseCacheCompressor(NULL, "Cache compressor.")

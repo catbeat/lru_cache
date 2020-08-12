@@ -7,6 +7,8 @@ from m5.objects import *
 m5.util.addToPath('../')
 from common.FileSystemConfig import config_filesystem
 
+from MSI_caches import MyCacheSystem
+
 system = System()
 
 system.clk_domain = SrcClockDomain()

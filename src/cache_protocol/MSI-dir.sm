@@ -184,7 +184,7 @@ machine(MachineType:Directory, "Directory Protocol")
             }
         }
 
-        action(sendMemoryRead, "r", desc="send a read request to memory"){
+        action(sendMemRead, "r", desc="send a read request to memory"){
             peek(request_in, RequestMsg){
                 queueMemoryRead(in_msg.Requestor, address, toMemLatency);
             }
@@ -336,7 +336,7 @@ machine(MachineType:Directory, "Directory Protocol")
         }
 
         transition(I, GetM, M_m){
-            sendMemoryRead;
+            sendMemRead;
             setOwner;
             popRequestIn;
         }
@@ -358,7 +358,7 @@ machine(MachineType:Directory, "Directory Protocol")
         }
 
         transition(S, GetM, M_m){
-            sendMemoryRead;
+            sendMemRead;
             sendInvToSharers;
             sendDataToReq;
             setOwner;
