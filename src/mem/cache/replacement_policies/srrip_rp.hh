@@ -4,6 +4,8 @@
 #include "mem/cache/replacement_policies/base.hh"
 #include "base/sat_counter.hh"
 
+struct SRRIPRPParams;
+
 class SRRIPRP: public BaseReplacementPolicy
 {
     protected:
@@ -17,7 +19,7 @@ class SRRIPRP: public BaseReplacementPolicy
             {
                 ;
             }
-        }
+        };
 
         const int numOfRRPVBits;
 
@@ -27,20 +29,20 @@ class SRRIPRP: public BaseReplacementPolicy
 
         typedef SRRIPRPParams Params;
 
-        SRRIPRP(Params *p);
-        ~SRRIPRP();
+        SRRIPRP(const Params *p);
+        ~SRRIPRP() {};
 
         void invalidate(const std::shared_ptr<ReplacementData>&
-                                                replacement_data) override;
+                                                replacement_data) const override;
 
         void touch(const std::shared_ptr<ReplacementData>&
-                                                replacement_data) override;
+                                                replacement_data) const override;
 
         void reset(const std::shared_ptr<ReplacementData>&
-                                                replacement_data) override;
+                                                replacement_data) const override;
 
         ReplaceableEntry* getVictim(
-                           const ReplacementCandidates& candidates) override;
+                           const ReplacementCandidates& candidates) const override;
 
         std::shared_ptr<ReplacementData> instantiateEntry() override;
 
