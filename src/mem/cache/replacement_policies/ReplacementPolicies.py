@@ -82,6 +82,13 @@ class BRRIPRP(BaseReplacementPolicy):
     btp = Param.Percent(3,
         "Percentage of blocks to be inserted with long RRPV")
 
+class SRRIPRP(BaseReplacementPolicy):
+    type = 'SRRIPRP'
+    cxx_class = 'SRRIPRP'
+    cxx_header = "mem/cache/replacement_policies/srrip_rp.hh"
+    num_bits = Param.Int(2, "Number of bits per RRPV")
+    hit_priority = Param.Bool(True)
+
 class RRIPRP(BRRIPRP):
     btp = 100
 
