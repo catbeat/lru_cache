@@ -1,0 +1,14 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/home/catbeat/Desktop/ball_of_yarn/catbeat_c/cache system/gem5"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/clang"
+        }
+    ],
+    "version": 4
+}
