@@ -37,6 +37,8 @@ from m5.params import *
 from m5.proxy import *
 from m5.objects.ClockedObject import ClockedObject
 from m5.objects.IndexingPolicies import *
+from m5.objects.ReplacementPolicies import *
+
 
 class BaseTags(ClockedObject):
     type = 'BaseTags'
@@ -81,6 +83,14 @@ class BaseSetAssoc(BaseTags):
     # Get replacement policy from the parent (cache)
     replacement_policy = Param.BaseReplacementPolicy(
         Parent.replacement_policy, "Replacement policy")
+
+class BaseSetAssocSdPredictor(BaseTags):
+    type = 'BaseSetAssocSdPredictor'
+    cxx_header = "mem/cache/tags/base_set_assoc_sd_predictor.hh"
+
+    assoc = Param.Int(Parent.assoc, "associativity")
+    replacement_policy = Param.BaseReplacementPolicy(
+        DRRIPRP(), "Replacement policy")
 
 class SectorTags(BaseTags):
     type = 'SectorTags'

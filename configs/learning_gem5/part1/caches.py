@@ -37,6 +37,8 @@ from __future__ import absolute_import
 
 import m5
 from m5.objects import Cache
+from m5.objects.ReplacementPolicies import *
+from m5.SimObject.ReplacementPolicies import *
 
 # Add the common scripts to our path
 m5.util.addToPath('../../')
@@ -55,6 +57,8 @@ class L1Cache(Cache):
     response_latency = 2
     mshrs = 4
     tgts_per_mshr = 20
+
+    replacement_policy = SRRIPRP()
 
     def __init__(self, options=None):
         super(L1Cache, self).__init__()
@@ -118,6 +122,8 @@ class L2Cache(Cache):
     response_latency = 20
     mshrs = 20
     tgts_per_mshr = 12
+
+    replacement_policy = SRRIPRP()
 
     SimpleOpts.add_option('--l2_size', help="L2 cache size. Default: %s" % size)
 

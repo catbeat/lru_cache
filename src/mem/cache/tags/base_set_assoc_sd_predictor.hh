@@ -24,10 +24,12 @@
 #include "mem/cache/cache_blk.hh"
 #include "mem/cache/replacement_policies/base.hh"
 #include "mem/cache/replacement_policies/replaceable_entry.hh"
+#include "mem/cache/replacement_policies/drrip_rp.hh"
 #include "mem/cache/tags/base.hh"
 #include "mem/cache/tags/indexing_policies/base.hh"
+#include "mem/cache/tags/indexing_policies/set_associative.hh"
 #include "mem/packet.hh"
-#include "param/BaseSetAssocSdPredictor.hh"
+#include "params/BaseSetAssocSdPredictor.hh"
 
 class BaseSetAssocSdPredictor: public BaseTags
 {
@@ -42,7 +44,9 @@ class BaseSetAssocSdPredictor: public BaseTags
         const bool sequentialAccess;
 
         /** Replacement policy */
-        BaseReplacementPolicy *replacementPolicy;
+        DRRIPRP *replacementPolicy;
+
+        SetAssociative *indexingPolicy;
 
     public:
         int hitFirstClass, accessFirstClass, hitSecondClass, accessSecondClass;
@@ -75,7 +79,7 @@ class BaseSetAssocSdPredictor: public BaseTags
             // either accesses all blocks in parallel, or one block sequentially on
             // a hit.  Sequential access with a miss doesn't access data.
             stats.tagAccesses += allocAssoc;
-            int setIndex = (addr >> indexingPolicy->setShift) & indexingPolicy->setMask;
+            int setIndex = indexingPolicy->extractSet(addr);
             
             if (setIndex%4 == 0){
                 accessFirstClass++;
@@ -204,6 +208,6 @@ class BaseSetAssocSdPredictor: public BaseTags
             }
             return false;
         }
-}
+};
 
 #endif

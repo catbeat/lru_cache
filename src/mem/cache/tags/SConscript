@@ -37,4 +37,5 @@ Source('fa_lru.cc')
 Source('sector_blk.cc')
 Source('sector_tags.cc')
 Source('super_blk.cc')
+Source('base_set_assoc_sd_predictor.cc')
 

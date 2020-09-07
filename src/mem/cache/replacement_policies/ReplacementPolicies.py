@@ -92,6 +92,16 @@ class SRRIPRP(BaseReplacementPolicy):
 class RRIPRP(BRRIPRP):
     btp = 100
 
+class DRRIPRP(BaseReplacementPolicy):
+    type = 'DRRIPRP'
+    cxx_class = 'DRRIPRP'
+    cxx_header = "mem/cache/replacement_policies/drrip_rp.hh"
+    num_bits = Param.Int(2, "Number of bits per RRPV")
+    hit_priority = Param.Bool(False,
+        "Prioritize evicting blocks that havent had a hit recently")
+    btp = Param.Percent(3,
+        "Percentage of blocks to be inserted with long RRPV")
+
 class NRURP(BRRIPRP):
     btp = 100
     num_bits = 1
